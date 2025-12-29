@@ -1,4 +1,4 @@
-import { Center, Select, Slider, Stack, Table, Text, Title } from '@mantine/core';
+import { Center, Select, Slider, Stack, Table } from '@mantine/core';
 import { useState } from 'react';
 
 const LAP_DISTANCE = 400;
