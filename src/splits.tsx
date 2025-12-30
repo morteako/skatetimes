@@ -61,22 +61,22 @@ function getOpeningPct(distance: DistanceInfo) {
   }
 }
 
-function getOpeningMinMax(distance: DistanceInfo) {
-  switch (distance.distance) {
-    case 500:
-      return [9, 20];
-    case 1000:
-      return [14, 30];
-    case 1500:
-      return [20, 40];
-    case 3000:
-      return [15, 40];
-    case 5000:
-      return [15, 40];
-    case 10000:
-      return [25, 60];
-  }
-}
+// function getOpeningMinMax(distance: DistanceInfo) {
+//   switch (distance.distance) {
+//     case 500:
+//       return [9, 20];
+//     case 1000:
+//       return [14, 30];
+//     case 1500:
+//       return [20, 40];
+//     case 3000:
+//       return [15, 40];
+//     case 5000:
+//       return [15, 40];
+//     case 10000:
+//       return [25, 60];
+//   }
+// }
 
 type Mode = { type: 'result'; result: number } | { type: 'laps'; lap: number; opening: number };
 
@@ -184,7 +184,6 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
 }
 
 function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n: number) => void }) {
-  const [min, max] = getOpeningMinMax(props.distance);
   return (
     <Slider
       color="blue"
@@ -200,9 +199,9 @@ function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n:
       step={0.1}
       size={'md'}
       labelAlwaysOn
-      min={min}
-      max={max}
-      marks={[min, max].map(secs => ({
+      min={5}
+      max={60}
+      marks={[10, 20, 30, 40, 50, 60].map(secs => ({
         value: secs,
         label: secs,
       }))}
@@ -227,9 +226,9 @@ function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void }
       step={0.1}
       size={'md'}
       labelAlwaysOn
-      min={20}
-      max={50}
-      marks={[20, 30, 40, 50].map(secs => ({
+      min={5}
+      max={60}
+      marks={[10, 20, 30, 40, 50, 60].map(secs => ({
         value: secs,
         label: secs,
       }))}
