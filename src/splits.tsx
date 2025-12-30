@@ -1,5 +1,5 @@
 import { Center, Select, Slider, Stack, Table } from '@mantine/core';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const LAP_DISTANCE = 400;
 
@@ -120,15 +120,34 @@ function useMode(distance: DistanceInfo) {
   return { secLap, secOpening, result: mode.result, setOpeningSec, setLapSec, setResult };
 }
 
+function getInitialDistance(): Distance {
+  if (typeof window === 'undefined') {
+    return 5000;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const param = params.get('distance');
+  if (param && Object.prototype.hasOwnProperty.call(distances, param)) {
+    return parseInt(param, 10) as Distance;
+  }
+  return 5000;
+}
+
 export default function Page() {
   const distanceOptions = Object.keys(distances).map(distance => ({
     value: distance,
     label: `${distance}m`,
   }));
-  const [selectedDistance, setSelectedDistance] = useState(5000 as Distance);
+  const [selectedDistance, setSelectedDistance] = useState<Distance>(getInitialDistance);
 
   const distance = distances[selectedDistance];
   const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('distance', selectedDistance.toString());
+    const next = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, '', next);
+  }, [selectedDistance]);
 
   return (
     <Stack maw={'500px'} w={'100%'} gap={'10px'}>
