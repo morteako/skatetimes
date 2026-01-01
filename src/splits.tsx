@@ -1,4 +1,4 @@
-import { Center, Select, Slider, Stack, Table } from '@mantine/core';
+import { Center, Group, Select, Slider, Stack, Switch, Table } from '@mantine/core';
 import { useEffect, useState } from 'react';
 
 const LAP_DISTANCE = 400;
@@ -61,26 +61,29 @@ function getOpeningPct(distance: DistanceInfo) {
   }
 }
 
-// function getOpeningMinMax(distance: DistanceInfo) {
-//   switch (distance.distance) {
-//     case 500:
-//       return [9, 20];
-//     case 1000:
-//       return [14, 30];
-//     case 1500:
-//       return [20, 40];
-//     case 3000:
-//       return [15, 40];
-//     case 5000:
-//       return [15, 40];
-//     case 10000:
-//       return [25, 60];
-//   }
-// }
+type LockMode = { type: 'none' } | { type: 'lap'; lap: number } | { type: 'opening'; opening: number };
 
-type Mode = { type: 'result'; result: number } | { type: 'laps'; lap: number; opening: number };
+const LockMode = {
+  none: { type: 'none' } as LockMode,
+  opening: (opening: number): LockMode => ({ type: 'opening', opening }),
+  lap: (lap: number): LockMode => ({ type: 'lap', lap }),
+};
 
-function useMode(distance: DistanceInfo) {
+type Mode = { type: 'result'; result: number } | { type: 'laps'; lap: number; opening: number }; // TODO type opening
+
+function useLockMode() {
+  const [lockMode, setLockMode] = useState<LockMode>(LockMode.none);
+  const setLapLock = (n: number) =>
+    lockMode.type !== 'lap' ? setLockMode(LockMode.lap(n)) : setLockMode(LockMode.none);
+  const setOpeningLock = (n: number) =>
+    lockMode.type !== 'opening' ? setLockMode(LockMode.opening(n)) : setLockMode(LockMode.none);
+  const lapLock = lockMode.type === 'lap';
+  const openingLock = lockMode.type === 'opening';
+
+  return { lockMode, lapLock, setLapLock, openingLock, setOpeningLock };
+}
+
+function useMode(distance: DistanceInfo, lockMode: LockMode) {
   const [mode, setMode] = useState<Mode>({ type: 'laps', lap: 40, opening: 20 });
 
   if (mode.type === 'laps') {
@@ -102,10 +105,33 @@ function useMode(distance: DistanceInfo) {
       setResult,
     };
   }
-  const openingPct = getOpeningPct(distance);
-  const secOpening = openingPct * mode.result;
-  const lapPct = (1 - openingPct) / distance.laps;
-  const secLap = lapPct * mode.result;
+  // "result" mode
+  const calculateLapAndOpeningFromLockMode = () => {
+    switch (lockMode.type) {
+      case 'opening': {
+        const openingPct = lockMode.opening / mode.result;
+        const secOpening = openingPct * mode.result;
+        const lapPct = (1 - openingPct) / distance.laps;
+        const secLap = lapPct * mode.result;
+        return { secOpening, secLap };
+      }
+      case 'lap': {
+        const lapPct = (lockMode.lap * distance.laps) / mode.result;
+        const secLap = lockMode.lap;
+        const openingPct = 1 - lapPct;
+        const secOpening = openingPct * mode.result;
+        return { secOpening, secLap };
+      }
+      case 'none': {
+        const openingPct = getOpeningPct(distance);
+        const secOpening = openingPct * mode.result;
+        const lapPct = (1 - openingPct) / distance.laps;
+        const secLap = lapPct * mode.result;
+        return { secOpening, secLap };
+      }
+    }
+  };
+  const { secOpening, secLap } = calculateLapAndOpeningFromLockMode();
 
   const setOpeningSec = (opening: number) => {
     setMode({ type: 'laps', lap: secLap, opening });
@@ -120,18 +146,6 @@ function useMode(distance: DistanceInfo) {
   return { secLap, secOpening, result: mode.result, setOpeningSec, setLapSec, setResult };
 }
 
-function getInitialDistance(): Distance {
-  if (typeof window === 'undefined') {
-    return 5000;
-  }
-  const params = new URLSearchParams(window.location.search);
-  const param = params.get('distance');
-  if (param && Object.prototype.hasOwnProperty.call(distances, param)) {
-    return parseInt(param, 10) as Distance;
-  }
-  return 5000;
-}
-
 export default function Page() {
   const distanceOptions = Object.keys(distances).map(distance => ({
     value: distance,
@@ -140,7 +154,8 @@ export default function Page() {
   const [selectedDistance, setSelectedDistance] = useState<Distance>(getInitialDistance);
 
   const distance = distances[selectedDistance];
-  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance);
+  const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
+  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lockMode);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -162,8 +177,14 @@ export default function Page() {
         />
       </Center>
       <Stack mt="30px" gap={'60px'}>
-        <OpeningSlider distance={distance} sec={secOpening} setSec={setOpeningSec} />
-        <LapTimeSlider secLap={secLap} setSecLap={setLapSec} />
+        <OpeningSlider
+          distance={distance}
+          sec={secOpening}
+          setSec={setOpeningSec}
+          locked={openingLock}
+          onToggleLock={() => setOpeningLock(secOpening)}
+        />
+        <LapTimeSlider secLap={secLap} setSecLap={setLapSec} locked={lapLock} onToggleLock={() => setLapLock(secLap)} />
         <ResultSlider distance={distance} result={result} setResult={setResult} />
       </Stack>
       <Stack gap={'10px'}>
@@ -202,81 +223,129 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
   );
 }
 
-function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n: number) => void }) {
+function OpeningSlider(props: {
+  distance: DistanceInfo;
+  sec: number;
+  setSec: (n: number) => void;
+  locked: boolean;
+  onToggleLock: () => void;
+}) {
   return (
-    <Slider
-      color="blue"
-      value={props.sec}
-      onChange={props.setSec}
-      styles={{
-        bar: { display: 'none' },
-        mark: {
-          backgroundColor: '#fff',
-          borderColor: '#fff',
-        },
-      }}
-      step={0.1}
-      size={'md'}
-      labelAlwaysOn
-      min={5}
-      max={60}
-      marks={[10, 20, 30, 40, 50, 60].map(secs => ({
-        value: secs,
-        label: secs,
-      }))}
-      label={val => `Opening: ${formatLap(val)}`}
-    />
+    <Group gap="sm" align="center" wrap="nowrap">
+      <Slider
+        color="blue"
+        value={props.sec}
+        onChange={value => {
+          if (props.locked) {
+            props.onToggleLock();
+          }
+          props.setSec(value);
+        }}
+        styles={{
+          bar: { display: 'none' },
+          thumb: props.locked ? { borderColor: 'green' } : undefined,
+          mark: {
+            backgroundColor: '#fff',
+            borderColor: '#fff',
+          },
+        }}
+        step={0.1}
+        size={'md'}
+        labelAlwaysOn
+        min={5}
+        max={60}
+        marks={[10, 20, 30, 40, 50, 60].map(secs => ({
+          value: secs,
+          label: secs,
+        }))}
+        label={val => `Opening: ${formatLap(val)}`}
+        style={{ flex: 1 }}
+      />
+      <LockButton locked={props.locked} onToggle={props.onToggleLock} />
+    </Group>
   );
 }
 
-function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void }) {
+function LapTimeSlider(props: {
+  secLap: number;
+  setSecLap: (n: number) => void;
+  locked: boolean;
+  onToggleLock: () => void;
+}) {
   return (
-    <Slider
-      color="blue"
-      value={props.secLap}
-      onChange={props.setSecLap}
-      styles={{
-        bar: { display: 'none' },
-        mark: {
-          backgroundColor: '#fff',
-          borderColor: '#fff',
-        },
-      }}
-      step={0.1}
-      size={'md'}
-      labelAlwaysOn
-      min={5}
-      max={60}
-      marks={[10, 20, 30, 40, 50, 60].map(secs => ({
-        value: secs,
-        label: secs,
-      }))}
-      label={val => `Lap: ${formatLap(val)}`}
-    />
+    <Group gap="sm" align="center" wrap="nowrap">
+      <Slider
+        color="blue"
+        value={props.secLap}
+        onChange={value => {
+          if (props.locked) {
+            props.onToggleLock();
+          }
+          props.setSecLap(value);
+        }}
+        styles={{
+          bar: { display: 'none' },
+          thumb: props.locked ? { borderColor: '#00b800', boxShadow: '0 0 0 2px #7fbf7f' } : undefined,
+          mark: {
+            backgroundColor: '#fff',
+            borderColor: '#fff',
+          },
+        }}
+        step={0.1}
+        size={'md'}
+        labelAlwaysOn
+        min={5}
+        max={60}
+        marks={[10, 20, 30, 40, 50, 60].map(secs => ({
+          value: secs,
+          label: secs,
+        }))}
+        label={val => `Lap: ${formatLap(val)}`}
+        style={{ flex: 1 }}
+      />
+      <LockButton locked={props.locked} onToggle={props.onToggleLock} />
+    </Group>
   );
 }
 
 function ResultSlider(props: { result: number; setResult: (n: number) => void; distance: DistanceInfo }) {
   return (
-    <Slider
-      color="blue"
-      value={props.result}
-      onChange={props.setResult}
-      styles={{
-        bar: { display: 'none' },
-        mark: {
-          backgroundColor: '#fff',
-          borderColor: '#fff',
-          '&[data-filled]': { backgroundColor: '#fff', borderColor: '#fff' },
-        },
-      }}
-      step={0.1}
-      size={'md'}
-      labelAlwaysOn
-      min={5 * (props.distance.laps + 1)}
-      max={60 * (props.distance.laps + 1)}
-      label={val => `Result: ${secKmToMinKm(val)}`}
-    />
+    <Group gap="sm" align="center" wrap="nowrap">
+      <Slider
+        color="blue"
+        value={props.result}
+        onChange={value => props.setResult(value)}
+        styles={{
+          bar: { display: 'none' },
+          mark: {
+            backgroundColor: '#fff',
+            borderColor: '#fff',
+            '&[data-filled]': { backgroundColor: '#fff', borderColor: '#fff' },
+          },
+        }}
+        step={0.1}
+        size={'md'}
+        labelAlwaysOn
+        min={5 * (props.distance.laps + 1)}
+        max={60 * (props.distance.laps + 1)}
+        label={val => `Result: ${secKmToMinKm(val)}`}
+        style={{ flex: 1 }}
+      />
+    </Group>
+  );
+}
+
+function LockButton(props: { locked: boolean; onToggle: () => void }) {
+  return (
+    <div style={{ width: 60, display: 'flex', justifyContent: 'flex-end' }}>
+      <Switch
+        checked={props.locked}
+        onChange={props.onToggle}
+        size="sm"
+        color={props.locked ? 'green' : 'gray'}
+        label={props.locked ? '🔒' : ''}
+      />
+    </div>
   );
 }
 
@@ -320,4 +389,16 @@ function lapSplits(secOpening: number, secLap: number, distance: DistanceInfo): 
     curTime += secLap;
   }
   return laps;
+}
+
+function getInitialDistance(): Distance {
+  if (typeof window === 'undefined') {
+    return 5000;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const param = params.get('distance');
+  if (param && Object.prototype.hasOwnProperty.call(distances, param)) {
+    return parseInt(param, 10) as Distance;
+  }
+  return 5000;
 }
