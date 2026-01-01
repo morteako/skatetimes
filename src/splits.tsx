@@ -106,32 +106,8 @@ function useMode(distance: DistanceInfo, lockMode: LockMode) {
     };
   }
   // "result" mode
-  const calculateLapAndOpeningFromLockMode = () => {
-    switch (lockMode.type) {
-      case 'opening': {
-        const openingPct = lockMode.opening / mode.result;
-        const secOpening = openingPct * mode.result;
-        const lapPct = (1 - openingPct) / distance.laps;
-        const secLap = lapPct * mode.result;
-        return { secOpening, secLap };
-      }
-      case 'lap': {
-        const lapPct = (lockMode.lap * distance.laps) / mode.result;
-        const secLap = lockMode.lap;
-        const openingPct = 1 - lapPct;
-        const secOpening = openingPct * mode.result;
-        return { secOpening, secLap };
-      }
-      case 'none': {
-        const openingPct = getOpeningPct(distance);
-        const secOpening = openingPct * mode.result;
-        const lapPct = (1 - openingPct) / distance.laps;
-        const secLap = lapPct * mode.result;
-        return { secOpening, secLap };
-      }
-    }
-  };
-  const { secOpening, secLap } = calculateLapAndOpeningFromLockMode();
+
+  const { secOpening, secLap } = calculateLapAndOpeningFromLockMode(lockMode, mode.result, distance);
 
   const setOpeningSec = (opening: number) => {
     setMode({ type: 'laps', lap: secLap, opening });
@@ -156,6 +132,8 @@ export default function Page() {
   const distance = distances[selectedDistance];
   const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
   const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lockMode);
+
+  const { minResult, maxResult } = calculateMinMaxResult(lockMode, distance);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -185,7 +163,13 @@ export default function Page() {
           onToggleLock={() => setOpeningLock(secOpening)}
         />
         <LapTimeSlider secLap={secLap} setSecLap={setLapSec} locked={lapLock} onToggleLock={() => setLapLock(secLap)} />
-        <ResultSlider distance={distance} result={result} setResult={setResult} />
+        <ResultSlider
+          distance={distance}
+          result={result}
+          setResult={setResult}
+          minResult={minResult}
+          maxResult={maxResult}
+        />
       </Stack>
       <Stack gap={'10px'}>
         <Center>
@@ -195,6 +179,54 @@ export default function Page() {
     </Stack>
   );
 }
+
+const MIN_TIME = 5;
+const MAX_TIME = 60;
+
+const calculateMinMaxResult = (lockMode: LockMode, distance: DistanceInfo) => {
+  switch (lockMode.type) {
+    case 'opening': {
+      const minResult = lockMode.opening + distance.laps * MIN_TIME;
+      const maxResult = lockMode.opening + distance.laps * MAX_TIME;
+      return { minResult, maxResult };
+    }
+    case 'lap': {
+      const minResult = MIN_TIME + distance.laps * lockMode.lap;
+      const maxResult = MAX_TIME + distance.laps * lockMode.lap;
+      return { minResult, maxResult };
+    }
+    case 'none': {
+      return {};
+    }
+  }
+};
+
+const calculateLapAndOpeningFromLockMode = (lockMode: LockMode, targetResult: number, distance: DistanceInfo) => {
+  switch (lockMode.type) {
+    case 'opening': {
+      const openingPct = lockMode.opening / targetResult;
+      const secOpening = openingPct * targetResult;
+      const lapPct = (1 - openingPct) / distance.laps;
+      const secLap = lapPct * targetResult;
+
+      return { secOpening, secLap };
+    }
+    case 'lap': {
+      const lapPct = (lockMode.lap * distance.laps) / targetResult;
+      const secLap = lockMode.lap;
+      const openingPct = 1 - lapPct;
+      const secOpening = openingPct * targetResult;
+      return { secOpening, secLap };
+    }
+    case 'none': {
+      const openingPct = getOpeningPct(distance);
+      const secOpening = openingPct * targetResult;
+      const lapPct = (1 - openingPct) / distance.laps;
+      const secLap = lapPct * targetResult;
+      return { secOpening, secLap };
+    }
+  }
+};
 
 function Splits(props: { secOpening: number; secLap: number; distance: DistanceInfo }) {
   const { secOpening, secLap, distance } = props;
@@ -308,7 +340,20 @@ function LapTimeSlider(props: {
   );
 }
 
-function ResultSlider(props: { result: number; setResult: (n: number) => void; distance: DistanceInfo }) {
+function ResultSlider(props: {
+  result: number;
+  setResult: (n: number) => void;
+  distance: DistanceInfo;
+  minResult?: number;
+  maxResult?: number;
+}) {
+  const marks = ([props.minResult, props.maxResult].filter(x => x) as number[]).map(x => ({
+    value: x,
+    label: secKmToMinKm(x),
+  }));
+  const min = props.minResult ?? MIN_TIME * (props.distance.laps + 1);
+  const max = props.maxResult ?? MAX_TIME * (props.distance.laps + 1);
+
   return (
     <Group gap="sm" align="center" wrap="nowrap">
       <Slider
@@ -320,16 +365,16 @@ function ResultSlider(props: { result: number; setResult: (n: number) => void; d
           mark: {
             backgroundColor: '#fff',
             borderColor: '#fff',
-            '&[data-filled]': { backgroundColor: '#fff', borderColor: '#fff' },
           },
         }}
         step={0.1}
         size={'md'}
         labelAlwaysOn
-        min={5 * (props.distance.laps + 1)}
-        max={60 * (props.distance.laps + 1)}
+        min={min}
+        max={max}
         label={val => `Result: ${secKmToMinKm(val)}`}
         style={{ flex: 1 }}
+        marks={marks}
       />
     </Group>
   );
@@ -349,9 +394,10 @@ function LockButton(props: { locked: boolean; onToggle: () => void }) {
   );
 }
 
-function secKmToMinKm(secKm: number): string {
-  const mins = Math.floor(secKm / 60);
-  const secs = secKm % 60;
+function secKmToMinKm(seconds: number): string {
+  const secondsToNearestDecimal = Math.round(seconds * 10) / 10;
+  const mins = Math.floor(secondsToNearestDecimal / 60);
+  const secs = secondsToNearestDecimal % 60;
   const paddedSecs = secs.toFixed(1).padStart(4, '0');
   return `${mins}:${paddedSecs}`;
 }
