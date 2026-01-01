@@ -1,5 +1,71 @@
-import { Center, Group, Select, Slider, Stack, Switch, Table } from '@mantine/core';
+import { Button, Center, Group, Select, Slider, Stack, Switch, Table } from '@mantine/core';
 import { useEffect, useState } from 'react';
+
+export default function Page() {
+  const distanceOptions = Object.keys(distances).map(distance => ({
+    value: distance,
+    label: `${distance}m`,
+  }));
+  const [selectedDistance, setSelectedDistance] = useState<Distance>(getInitialDistance);
+
+  const distance = distances[selectedDistance];
+  const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
+  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lockMode);
+
+  const { minResult, maxResult } = calculateMinMaxResult(lockMode, distance);
+  const [showSplits, setShowSplits] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('distance', selectedDistance.toString());
+    const next = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, '', next);
+  }, [selectedDistance]);
+
+  return (
+    <Stack maw={'500px'} w={'100%'} gap={'30px'}>
+      <Center>
+        <Select
+          maw={'150px'}
+          label="Distance"
+          data={distanceOptions}
+          value={selectedDistance.toString()}
+          onChange={value => value && setSelectedDistance(parseInt(value, 10) as Distance)}
+          allowDeselect={false}
+        />
+      </Center>
+      <Stack mt="10px" gap={'60px'}>
+        <ResultSlider
+          distance={distance}
+          result={result}
+          setResult={setResult}
+          minResult={minResult}
+          maxResult={maxResult}
+        />
+        <LapTimeSlider secLap={secLap} setSecLap={setLapSec} locked={lapLock} onToggleLock={() => setLapLock(secLap)} />
+        <OpeningSlider
+          distance={distance}
+          sec={secOpening}
+          setSec={setOpeningSec}
+          locked={openingLock}
+          onToggleLock={() => setOpeningLock(secOpening)}
+        />
+      </Stack>
+      <Stack gap={'10px'}>
+        <Center>
+          <Button variant="subtle" onClick={() => setShowSplits(value => !value)}>
+            {showSplits ? 'Hide splits' : 'Show splits'}
+          </Button>
+        </Center>
+        {showSplits && (
+          <Center>
+            <Splits secLap={secLap} secOpening={secOpening} distance={distance} />
+          </Center>
+        )}
+      </Stack>
+    </Stack>
+  );
+}
 
 const LAP_DISTANCE = 400;
 
@@ -122,64 +188,6 @@ function useMode(distance: DistanceInfo, lockMode: LockMode) {
   return { secLap, secOpening, result: mode.result, setOpeningSec, setLapSec, setResult };
 }
 
-export default function Page() {
-  const distanceOptions = Object.keys(distances).map(distance => ({
-    value: distance,
-    label: `${distance}m`,
-  }));
-  const [selectedDistance, setSelectedDistance] = useState<Distance>(getInitialDistance);
-
-  const distance = distances[selectedDistance];
-  const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
-  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lockMode);
-
-  const { minResult, maxResult } = calculateMinMaxResult(lockMode, distance);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    params.set('distance', selectedDistance.toString());
-    const next = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState(null, '', next);
-  }, [selectedDistance]);
-
-  return (
-    <Stack maw={'500px'} w={'100%'} gap={'10px'}>
-      <Center>
-        <Select
-          maw={'150px'}
-          label="Distance"
-          data={distanceOptions}
-          value={selectedDistance.toString()}
-          onChange={value => value && setSelectedDistance(parseInt(value, 10) as Distance)}
-          allowDeselect={false}
-        />
-      </Center>
-      <Stack mt="30px" gap={'60px'}>
-        <OpeningSlider
-          distance={distance}
-          sec={secOpening}
-          setSec={setOpeningSec}
-          locked={openingLock}
-          onToggleLock={() => setOpeningLock(secOpening)}
-        />
-        <LapTimeSlider secLap={secLap} setSecLap={setLapSec} locked={lapLock} onToggleLock={() => setLapLock(secLap)} />
-        <ResultSlider
-          distance={distance}
-          result={result}
-          setResult={setResult}
-          minResult={minResult}
-          maxResult={maxResult}
-        />
-      </Stack>
-      <Stack gap={'10px'}>
-        <Center>
-          <Splits secLap={secLap} secOpening={secOpening} distance={distance} />
-        </Center>
-      </Stack>
-    </Stack>
-  );
-}
-
 const MIN_TIME = 5;
 const MAX_TIME = 60;
 
@@ -196,7 +204,9 @@ const calculateMinMaxResult = (lockMode: LockMode, distance: DistanceInfo) => {
       return { minResult, maxResult };
     }
     case 'none': {
-      return {};
+      const minResult = MIN_TIME + distance.laps * MIN_TIME;
+      const maxResult = MAX_TIME + distance.laps * MAX_TIME;
+      return { minResult, maxResult };
     }
   }
 };
@@ -221,8 +231,24 @@ const calculateLapAndOpeningFromLockMode = (lockMode: LockMode, targetResult: nu
     case 'none': {
       const openingPct = getOpeningPct(distance);
       const secOpening = openingPct * targetResult;
+      if (secOpening < MIN_TIME) {
+        const fixedOpeningPct = MIN_TIME / targetResult;
+        const lapPct = (1 - fixedOpeningPct) / distance.laps;
+        const secLap = lapPct * targetResult;
+        return { secOpening: MIN_TIME, secLap };
+      }
+      if (secOpening > MAX_TIME) {
+        const fixedOpeningPct = MAX_TIME / targetResult;
+        const lapPct = (1 - fixedOpeningPct) / distance.laps;
+        const secLap = lapPct * targetResult;
+        return { secOpening: MAX_TIME, secLap };
+      }
       const lapPct = (1 - openingPct) / distance.laps;
       const secLap = lapPct * targetResult;
+      if (secLap > MAX_TIME) {
+        const fixedSecOpening = targetResult - MAX_TIME * distance.laps;
+        return { secOpening: fixedSecOpening, secLap: MAX_TIME };
+      }
       return { secOpening, secLap };
     }
   }
