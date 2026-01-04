@@ -1,4 +1,4 @@
-import { Button, Center, Group, Select, Slider, Stack, Table } from '@mantine/core';
+import { ActionIcon, Button, Center, Group, Select, Slider, Stack, Table } from '@mantine/core';
 import { useEffect, useState } from 'react';
 
 type LapProg = { startLap: number; diff: number };
@@ -113,45 +113,87 @@ function LapProgression(props: {
   return (
     <Stack gap={'25px'} w="100%">
       <Center w="100%">
-        <Slider
-          size="xs"
-          w="100%"
-          maw="60%"
-          min={2}
-          max={props.maxLap}
-          step={1}
-          value={prog.startLap}
-          marks={[
-            { value: 2, label: '2' },
-            { value: props.maxLap, label: props.maxLap.toString() },
-          ]}
-          label={value => `Start lap: ${value}`}
-          labelAlwaysOn
-          mt={15}
-          mb={15}
-          onChange={value => props.setLapProg(item => (item ? { ...item, startLap: value } : item))}
-        />
+        <Group w="100%" maw="60%" gap="xs" wrap="nowrap">
+          <ActionIcon
+            size="xs"
+            variant="light"
+            onClick={() =>
+              props.setLapProg(item =>
+                item ? { ...item, startLap: adjustValue(item.startLap, -1, 1, 2, props.maxLap) } : item
+              )
+            }
+          >
+            –
+          </ActionIcon>
+          <Slider
+            size="xs"
+            w="100%"
+            min={2}
+            max={props.maxLap}
+            step={1}
+            value={prog.startLap}
+            marks={[
+              { value: 2, label: '2' },
+              { value: props.maxLap, label: props.maxLap.toString() },
+            ]}
+            label={value => `Start lap: ${value}`}
+            labelAlwaysOn
+            mt={15}
+            mb={15}
+            onChange={value => props.setLapProg(item => (item ? { ...item, startLap: value } : item))}
+          />
+          <ActionIcon
+            size="xs"
+            variant="light"
+            onClick={() =>
+              props.setLapProg(item =>
+                item ? { ...item, startLap: adjustValue(item.startLap, 1, 1, 2, props.maxLap) } : item
+              )
+            }
+          >
+            +
+          </ActionIcon>
+        </Group>
       </Center>
       <Center w="100%">
-        <Slider
-          size="xs"
-          w="100%"
-          maw="60%"
-          min={-3}
-          max={3}
-          step={0.1}
-          value={prog.diff}
-          marks={[
-            { value: -3, label: '-3' },
-            { value: 0, label: '0' },
-            { value: 3, label: '3' },
-          ]}
-          label={value => `Diff: ${value.toFixed(1)}`}
-          labelAlwaysOn
-          mt={15}
-          mb={15}
-          onChange={value => props.setLapProg(item => (item ? { ...item, diff: value } : item))}
-        />
+        <Group w="100%" maw="60%" gap="xs" wrap="nowrap">
+          <ActionIcon
+            size="xs"
+            variant="light"
+            onClick={() =>
+              props.setLapProg(item => (item ? { ...item, diff: adjustValue(item.diff, -0.1, 0.1, -3, 3) } : item))
+            }
+          >
+            –
+          </ActionIcon>
+          <Slider
+            size="xs"
+            w="100%"
+            min={-3}
+            max={3}
+            step={0.1}
+            value={prog.diff}
+            marks={[
+              { value: -3, label: '-3' },
+              { value: 0, label: '0' },
+              { value: 3, label: '3' },
+            ]}
+            label={value => `Diff: ${value.toFixed(1)}`}
+            labelAlwaysOn
+            mt={15}
+            mb={15}
+            onChange={value => props.setLapProg(item => (item ? { ...item, diff: value } : item))}
+          />
+          <ActionIcon
+            size="xs"
+            variant="light"
+            onClick={() =>
+              props.setLapProg(item => (item ? { ...item, diff: adjustValue(item.diff, 0.1, 0.1, -3, 3) } : item))
+            }
+          >
+            +
+          </ActionIcon>
+        </Group>
       </Center>
     </Stack>
   );
@@ -178,7 +220,7 @@ const distances = {
   3000: {
     distance: 3000,
     opening: 200,
-    laps: 6,
+    laps: 7,
   },
   5000: {
     distance: 5000,
@@ -380,6 +422,9 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
 function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n: number) => void }) {
   return (
     <Group gap="sm" align="center" wrap="nowrap">
+      <ActionIcon variant="light" onClick={() => props.setSec(adjustValue(props.sec, -0.1, 0.1, MIN_TIME, MAX_TIME))}>
+        –
+      </ActionIcon>
       <Slider
         color="blue"
         value={props.sec}
@@ -405,6 +450,9 @@ function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n:
         label={val => `Opening: ${formatLap(val)}`}
         style={{ flex: 1 }}
       />
+      <ActionIcon variant="light" onClick={() => props.setSec(adjustValue(props.sec, 0.1, 0.1, MIN_TIME, MAX_TIME))}>
+        +
+      </ActionIcon>
     </Group>
   );
 }
@@ -412,6 +460,12 @@ function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n:
 function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void }) {
   return (
     <Group gap="sm" align="center" wrap="nowrap">
+      <ActionIcon
+        variant="light"
+        onClick={() => props.setSecLap(adjustValue(props.secLap, -0.1, 0.1, MIN_TIME, MAX_TIME))}
+      >
+        –
+      </ActionIcon>
       <Slider
         color="blue"
         value={props.secLap}
@@ -437,6 +491,12 @@ function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void }
         label={val => `Lap: ${formatLap(val)}`}
         style={{ flex: 1 }}
       />
+      <ActionIcon
+        variant="light"
+        onClick={() => props.setSecLap(adjustValue(props.secLap, 0.1, 0.1, MIN_TIME, MAX_TIME))}
+      >
+        +
+      </ActionIcon>
     </Group>
   );
 }
@@ -448,15 +508,14 @@ function ResultSlider(props: {
   minResult?: number;
   maxResult?: number;
 }) {
-  const marks = ([props.minResult, props.maxResult].filter(x => x) as number[]).map(x => ({
-    value: x,
-    label: secKmToMinKm(x),
-  }));
   const min = props.minResult ?? MIN_TIME * (props.distance.laps + 1);
   const max = props.maxResult ?? MAX_TIME * (props.distance.laps + 1);
 
   return (
     <Group gap="sm" align="center" wrap="nowrap">
+      <ActionIcon variant="light" onClick={() => props.setResult(adjustValue(props.result, -0.1, 0.1, min, max))}>
+        –
+      </ActionIcon>
       <Slider
         color="blue"
         value={props.result}
@@ -477,8 +536,10 @@ function ResultSlider(props: {
         mb={15}
         label={val => `Result: ${secKmToMinKm(val)}`}
         style={{ flex: 1 }}
-        marks={marks}
       />
+      <ActionIcon variant="light" onClick={() => props.setResult(adjustValue(props.result, 0.1, 0.1, min, max))}>
+        +
+      </ActionIcon>
     </Group>
   );
 }
@@ -519,6 +580,13 @@ function formatSplitTime(totalSeconds: number): string {
   const secs = totalSeconds % 60;
   const paddedSecs = secs.toFixed(1).padStart(4, '0');
   return `${mins.toString().padStart(2, '0')}:${paddedSecs}`;
+}
+
+function adjustValue(value: number, delta: number, step: number, min: number, max: number): number {
+  const next = value + delta;
+  const snapped = Math.round(next / step) * step;
+  const clamped = Math.min(max, Math.max(min, snapped));
+  return Number(clamped.toFixed(3));
 }
 
 type LapInfo = {
