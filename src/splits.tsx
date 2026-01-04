@@ -1,4 +1,4 @@
-import { Button, Center, Group, Select, Slider, Stack, Switch, Table } from '@mantine/core';
+import { Button, Center, Group, Select, Slider, Stack, Table } from '@mantine/core';
 import { useEffect, useState } from 'react';
 
 export default function Page() {
@@ -9,7 +9,8 @@ export default function Page() {
   const [selectedDistance, setSelectedDistance] = useState<Distance>(getInitialDistance);
 
   const distance = distances[selectedDistance];
-  const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
+  // const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
+  const lockMode = LockMode.none;
   const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lockMode);
 
   const { minResult, maxResult } = calculateMinMaxResult(lockMode, distance);
@@ -42,13 +43,11 @@ export default function Page() {
           minResult={minResult}
           maxResult={maxResult}
         />
-        <LapTimeSlider secLap={secLap} setSecLap={setLapSec} locked={lapLock} onToggleLock={() => setLapLock(secLap)} />
+        <LapTimeSlider secLap={secLap} setSecLap={setLapSec} />
         <OpeningSlider
           distance={distance}
           sec={secOpening}
           setSec={setOpeningSec}
-          locked={openingLock}
-          onToggleLock={() => setOpeningLock(secOpening)}
         />
       </Stack>
       <Stack gap={'10px'}>
@@ -285,23 +284,15 @@ function OpeningSlider(props: {
   distance: DistanceInfo;
   sec: number;
   setSec: (n: number) => void;
-  locked: boolean;
-  onToggleLock: () => void;
 }) {
   return (
     <Group gap="sm" align="center" wrap="nowrap">
       <Slider
         color="blue"
         value={props.sec}
-        onChange={value => {
-          if (props.locked) {
-            props.onToggleLock();
-          }
-          props.setSec(value);
-        }}
+        onChange={value => props.setSec(value)}
         styles={{
           bar: { display: 'none' },
-          thumb: props.locked ? { borderColor: 'green' } : undefined,
           mark: {
             backgroundColor: '#fff',
             borderColor: '#fff',
@@ -319,7 +310,6 @@ function OpeningSlider(props: {
         label={val => `Opening: ${formatLap(val)}`}
         style={{ flex: 1 }}
       />
-      <LockButton locked={props.locked} onToggle={props.onToggleLock} />
     </Group>
   );
 }
@@ -327,23 +317,15 @@ function OpeningSlider(props: {
 function LapTimeSlider(props: {
   secLap: number;
   setSecLap: (n: number) => void;
-  locked: boolean;
-  onToggleLock: () => void;
 }) {
   return (
     <Group gap="sm" align="center" wrap="nowrap">
       <Slider
         color="blue"
         value={props.secLap}
-        onChange={value => {
-          if (props.locked) {
-            props.onToggleLock();
-          }
-          props.setSecLap(value);
-        }}
+        onChange={value => props.setSecLap(value)}
         styles={{
           bar: { display: 'none' },
-          thumb: props.locked ? { borderColor: '#00b800', boxShadow: '0 0 0 2px #7fbf7f' } : undefined,
           mark: {
             backgroundColor: '#fff',
             borderColor: '#fff',
@@ -361,7 +343,6 @@ function LapTimeSlider(props: {
         label={val => `Lap: ${formatLap(val)}`}
         style={{ flex: 1 }}
       />
-      <LockButton locked={props.locked} onToggle={props.onToggleLock} />
     </Group>
   );
 }
@@ -406,19 +387,19 @@ function ResultSlider(props: {
   );
 }
 
-function LockButton(props: { locked: boolean; onToggle: () => void }) {
-  return (
-    <div style={{ width: 60, display: 'flex', justifyContent: 'flex-end' }}>
-      <Switch
-        checked={props.locked}
-        onChange={props.onToggle}
-        size="sm"
-        color={props.locked ? 'green' : 'gray'}
-        label={props.locked ? '🔒' : ''}
-      />
-    </div>
-  );
-}
+// function LockButton(props: { locked: boolean; onToggle: () => void }) {
+//   return (
+//     <div style={{ width: 60, display: 'flex', justifyContent: 'flex-end' }}>
+//       <Switch
+//         checked={props.locked}
+//         onChange={props.onToggle}
+//         size="sm"
+//         color={props.locked ? 'green' : 'gray'}
+//         label={props.locked ? '🔒' : ''}
+//       />
+//     </div>
+//   );
+// }
 
 function secKmToMinKm(seconds: number): string {
   const secondsToNearestDecimal = Math.round(seconds * 10) / 10;
