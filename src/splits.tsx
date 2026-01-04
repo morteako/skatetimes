@@ -1,6 +1,8 @@
 import { Button, Center, Group, Select, Slider, Stack, Table } from '@mantine/core';
 import { useEffect, useState } from 'react';
 
+type LapProg = { startLap: number; diff: number };
+
 export default function Page() {
   const distanceOptions = Object.keys(distances).map(distance => ({
     value: distance,
@@ -9,12 +11,15 @@ export default function Page() {
   const [selectedDistance, setSelectedDistance] = useState<Distance>(getInitialDistance);
 
   const distance = distances[selectedDistance];
+  const [lapProg, setLapProg] = useState<LapProg | null>(null);
+
+  const lapProgFunc = makeLapProgFunc(lapProg);
   // const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
   const lockMode = LockMode.none;
-  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lockMode);
+  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lockMode, lapProgFunc);
 
   const { minResult, maxResult } = calculateMinMaxResult(lockMode, distance);
-  const [showSplits, setShowSplits] = useState(false);
+  const [showSplits, setShowSplits] = useState(true);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -35,21 +40,37 @@ export default function Page() {
           allowDeselect={false}
         />
       </Center>
-      <Stack mt="10px" gap={'60px'}>
+      <Stack mt="10px" gap={'30px'}>
         <ResultSlider
           distance={distance}
           result={result}
-          setResult={setResult}
+          setResult={(result: number) => {
+            setLapProg(lapProg === null ? null : { ...lapProg, diff: 0 });
+            setResult(result);
+          }}
           minResult={minResult}
           maxResult={maxResult}
         />
+        <OpeningSlider distance={distance} sec={secOpening} setSec={setOpeningSec} />
         <LapTimeSlider secLap={secLap} setSecLap={setLapSec} />
-        <OpeningSlider
-          distance={distance}
-          sec={secOpening}
-          setSec={setOpeningSec}
-        />
       </Stack>
+      <Stack>
+        <Center>
+          <LapProgression lapProg={lapProg} setLapProg={setLapProg} maxLap={distance.laps} />
+        </Center>
+        <Center>
+          {lapProg ? (
+            <Button variant="subtle" onClick={() => setLapProg(null)}>
+              Remove lap progression
+            </Button>
+          ) : (
+            <Button variant="subtle" onClick={() => setLapProg({ startLap: 2, diff: 0.1 })}>
+              Add lap progression
+            </Button>
+          )}
+        </Center>
+      </Stack>
+
       <Stack gap={'10px'}>
         <Center>
           <Button variant="subtle" onClick={() => setShowSplits(value => !value)}>
@@ -58,10 +79,80 @@ export default function Page() {
         </Center>
         {showSplits && (
           <Center>
-            <Splits secLap={secLap} secOpening={secOpening} distance={distance} />
+            <Splits secLap={secLap} secOpening={secOpening} distance={distance} lapProg={lapProgFunc} />
           </Center>
         )}
       </Stack>
+    </Stack>
+  );
+}
+
+const makeLapProgFunc = (lapProg: LapProg | null) => {
+  if (!lapProg) {
+    return (params: { curLap: number; lapNumber: number }) => params.curLap;
+  }
+  return (params: { curLap: number; lapNumber: number }) => {
+    if (params.lapNumber < lapProg.startLap) {
+      return params.curLap;
+    }
+    return Math.max(0, params.curLap + lapProg.diff);
+  };
+};
+
+function LapProgression(props: {
+  lapProg: LapProg | null;
+  setLapProg: React.Dispatch<React.SetStateAction<LapProg | null>>;
+  maxLap: number;
+}) {
+  if (!props.lapProg) {
+    return null;
+  }
+
+  const prog = props.lapProg;
+
+  return (
+    <Stack gap={'25px'} w="100%">
+      <Center w="100%">
+        <Slider
+          size="xs"
+          w="100%"
+          maw="60%"
+          min={2}
+          max={props.maxLap}
+          step={1}
+          value={prog.startLap}
+          marks={[
+            { value: 2, label: '2' },
+            { value: props.maxLap, label: props.maxLap.toString() },
+          ]}
+          label={value => `Start lap: ${value}`}
+          labelAlwaysOn
+          mt={15}
+          mb={15}
+          onChange={value => props.setLapProg(item => (item ? { ...item, startLap: value } : item))}
+        />
+      </Center>
+      <Center w="100%">
+        <Slider
+          size="xs"
+          w="100%"
+          maw="60%"
+          min={-3}
+          max={3}
+          step={0.1}
+          value={prog.diff}
+          marks={[
+            { value: -3, label: '-3' },
+            { value: 0, label: '0' },
+            { value: 3, label: '3' },
+          ]}
+          label={value => `Diff: ${value.toFixed(1)}`}
+          labelAlwaysOn
+          mt={15}
+          mb={15}
+          onChange={value => props.setLapProg(item => (item ? { ...item, diff: value } : item))}
+        />
+      </Center>
     </Stack>
   );
 }
@@ -136,19 +227,19 @@ const LockMode = {
 
 type Mode = { type: 'result'; result: number } | { type: 'laps'; lap: number; opening: number }; // TODO type opening
 
-function useLockMode() {
-  const [lockMode, setLockMode] = useState<LockMode>(LockMode.none);
-  const setLapLock = (n: number) =>
-    lockMode.type !== 'lap' ? setLockMode(LockMode.lap(n)) : setLockMode(LockMode.none);
-  const setOpeningLock = (n: number) =>
-    lockMode.type !== 'opening' ? setLockMode(LockMode.opening(n)) : setLockMode(LockMode.none);
-  const lapLock = lockMode.type === 'lap';
-  const openingLock = lockMode.type === 'opening';
+// function useLockMode() {
+//   const [lockMode, setLockMode] = useState<LockMode>(LockMode.none);
+//   const setLapLock = (n: number) =>
+//     lockMode.type !== 'lap' ? setLockMode(LockMode.lap(n)) : setLockMode(LockMode.none);
+//   const setOpeningLock = (n: number) =>
+//     lockMode.type !== 'opening' ? setLockMode(LockMode.opening(n)) : setLockMode(LockMode.none);
+//   const lapLock = lockMode.type === 'lap';
+//   const openingLock = lockMode.type === 'opening';
 
-  return { lockMode, lapLock, setLapLock, openingLock, setOpeningLock };
-}
+//   return { lockMode, lapLock, setLapLock, openingLock, setOpeningLock };
+// }
 
-function useMode(distance: DistanceInfo, lockMode: LockMode) {
+function useMode(distance: DistanceInfo, lockMode: LockMode, lapProg: LapProgInfo) {
   const [mode, setMode] = useState<Mode>({ type: 'laps', lap: 40, opening: 20 });
 
   if (mode.type === 'laps') {
@@ -161,10 +252,12 @@ function useMode(distance: DistanceInfo, lockMode: LockMode) {
     const setResult = (result: number) => {
       setMode({ type: 'result', result });
     };
+    const splits = lapSplits(mode.opening, mode.lap, distance, lapProg);
+
     return {
       secLap: mode.lap,
       secOpening: mode.opening,
-      result: mode.opening + mode.lap * distance.laps,
+      result: splits.at(-1)!.timeSec,
       setOpeningSec,
       setLapSec,
       setResult,
@@ -253,10 +346,12 @@ const calculateLapAndOpeningFromLockMode = (lockMode: LockMode, targetResult: nu
   }
 };
 
-function Splits(props: { secOpening: number; secLap: number; distance: DistanceInfo }) {
-  const { secOpening, secLap, distance } = props;
+type LapProgInfo = (params: { curLap: number; lapNumber: number }) => number;
 
-  const laps = lapSplits(secOpening, secLap, distance);
+function Splits(props: { secOpening: number; secLap: number; distance: DistanceInfo; lapProg: LapProgInfo }) {
+  const { secOpening, secLap, distance, lapProg } = props;
+
+  const laps = lapSplits(secOpening, secLap, distance, lapProg);
 
   return (
     <Table striped highlightOnHover withColumnBorders>
@@ -265,6 +360,7 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
           <Table.Th>Lap</Table.Th>
           <Table.Th>Distance</Table.Th>
           <Table.Th>Time</Table.Th>
+          <Table.Th>Split</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -273,6 +369,7 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
             <Table.Td>{lap.lapNumber}</Table.Td>
             <Table.Td>{formatDistance(lap.distance)}</Table.Td>
             <Table.Td>{formatSplitTime(lap.timeSec)}</Table.Td>
+            <Table.Td>{formatLap(lap.lapSec)}</Table.Td>
           </Table.Tr>
         ))}
       </Table.Tbody>
@@ -280,11 +377,7 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
   );
 }
 
-function OpeningSlider(props: {
-  distance: DistanceInfo;
-  sec: number;
-  setSec: (n: number) => void;
-}) {
+function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n: number) => void }) {
   return (
     <Group gap="sm" align="center" wrap="nowrap">
       <Slider
@@ -303,6 +396,8 @@ function OpeningSlider(props: {
         labelAlwaysOn
         min={5}
         max={60}
+        mt={15}
+        mb={15}
         marks={[10, 20, 30, 40, 50, 60].map(secs => ({
           value: secs,
           label: secs,
@@ -314,10 +409,7 @@ function OpeningSlider(props: {
   );
 }
 
-function LapTimeSlider(props: {
-  secLap: number;
-  setSecLap: (n: number) => void;
-}) {
+function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void }) {
   return (
     <Group gap="sm" align="center" wrap="nowrap">
       <Slider
@@ -334,6 +426,8 @@ function LapTimeSlider(props: {
         step={0.1}
         size={'md'}
         labelAlwaysOn
+        mt={15}
+        mb={15}
         min={5}
         max={60}
         marks={[10, 20, 30, 40, 50, 60].map(secs => ({
@@ -379,6 +473,8 @@ function ResultSlider(props: {
         labelAlwaysOn
         min={min}
         max={max}
+        mt={15}
+        mb={15}
         label={val => `Result: ${secKmToMinKm(val)}`}
         style={{ flex: 1 }}
         marks={marks}
@@ -429,17 +525,20 @@ type LapInfo = {
   distance: number;
   timeSec: number;
   lapNumber: number;
+  lapSec: number;
 };
 
-function lapSplits(secOpening: number, secLap: number, distance: DistanceInfo): Array<LapInfo> {
+function lapSplits(secOpening: number, secLap: number, distance: DistanceInfo, lapProgs: LapProgInfo): Array<LapInfo> {
   const laps: Array<LapInfo> = [];
   let curDistance = distance.opening;
   let curTime = secOpening;
-  for (let i = 0; i < distance.laps + 1; i++) {
-    const info = { distance: curDistance, timeSec: curTime, lapNumber: i + 1 };
-    laps.push(info);
+  let curLap = secLap;
+  for (let lapNumber = 1; lapNumber <= distance.laps + 1; lapNumber++) {
+    const lapSec = lapNumber === 1 ? secOpening : curLap;
+    laps.push({ distance: curDistance, timeSec: curTime, lapNumber, lapSec });
     curDistance += LAP_DISTANCE;
-    curTime += secLap;
+    curTime += lapNumber === 1 ? secLap : curLap;
+    curLap = lapProgs({ curLap, lapNumber });
   }
   return laps;
 }
