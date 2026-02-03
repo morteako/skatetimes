@@ -251,7 +251,7 @@ function getOpeningPct(distance: DistanceInfo) {
     case 1500:
       return 0.23;
     case 3000:
-      return 0.09;
+      return 0.08;
     case 5000:
       return 0.05;
     case 10000:
