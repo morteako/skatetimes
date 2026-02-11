@@ -15,10 +15,10 @@ export default function Page() {
 
   const lapProgFunc = makeLapProgFunc(lapProg);
   // const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
-  const lockMode = LockMode.none;
-  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lockMode, lapProgFunc);
 
-  const { minResult, maxResult } = calculateMinMaxResult(lockMode, distance);
+  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lapProgFunc);
+
+  const { minResult, maxResult } = calculateMinMaxResult(distance);
   const [showSplits, setShowSplits] = useState(true);
 
   useEffect(() => {
@@ -281,7 +281,7 @@ type Mode = { type: 'result'; result: number } | { type: 'laps'; lap: number; op
 //   return { lockMode, lapLock, setLapLock, openingLock, setOpeningLock };
 // }
 
-function useMode(distance: DistanceInfo, lockMode: LockMode, lapProg: LapProgInfo) {
+function useMode(distance: DistanceInfo, lapProg: LapProgInfo) {
   const [mode, setMode] = useState<Mode>({ type: 'laps', lap: 40, opening: 20 });
 
   if (mode.type === 'laps') {
@@ -307,7 +307,7 @@ function useMode(distance: DistanceInfo, lockMode: LockMode, lapProg: LapProgInf
   }
   // "result" mode
 
-  const { secOpening, secLap } = calculateLapAndOpeningFromLockMode(lockMode, mode.result, distance);
+  const { secOpening, secLap } = calculateLapAndOpeningFromLockMode(mode.result, distance);
 
   const setOpeningSec = (opening: number) => {
     setMode({ type: 'laps', lap: secLap, opening });
@@ -328,13 +328,13 @@ const MAX_TIME_OPENING = 60;
 const MIN_TIME_LAP = 30;
 const MAX_TIME_LAP = 50;
 
-const calculateMinMaxResult = (lockMode: LockMode, distance: DistanceInfo) => {
+const calculateMinMaxResult = (distance: DistanceInfo) => {
   const minResult = MIN_TIME_OPENING + distance.laps * MIN_TIME_LAP;
   const maxResult = MAX_TIME_OPENING + distance.laps * MAX_TIME_LAP;
   return { minResult, maxResult };
 };
 
-const calculateLapAndOpeningFromLockMode = (lockMode: LockMode, targetResult: number, distance: DistanceInfo) => {
+const calculateLapAndOpeningFromLockMode = (targetResult: number, distance: DistanceInfo) => {
   const openingPct = getOpeningPct(distance);
   const secOpening = openingPct * targetResult;
   if (secOpening < MIN_TIME_OPENING) {
