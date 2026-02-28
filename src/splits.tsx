@@ -5,6 +5,7 @@ import {
   Group,
   Modal,
   RangeSlider,
+  SegmentedControl,
   Select,
   Slider,
   Stack,
@@ -13,7 +14,8 @@ import {
 } from '@mantine/core';
 import { useEffect, useState } from 'react';
 
-type LapProg = { startLap: number; diff: number };
+type LapProgMode = 'static' | 'accumlative';
+type LapProg = { startLap: number; diff: number; mode: LapProgMode };
 type LapTimeSettings = { min: number; max: number };
 
 const LAP_TIME_SETTINGS_KEY = 'lapTimeSettings';
@@ -122,7 +124,7 @@ export default function Page() {
               Remove lap progression
             </Button>
           ) : (
-            <Button variant="subtle" onClick={() => setLapProg({ startLap: 2, diff: 0.1 })}>
+            <Button variant="subtle" onClick={() => setLapProg({ startLap: 2, diff: 0.1, mode: 'accumlative' })}>
               Add lap progression
             </Button>
           )}
@@ -147,11 +149,14 @@ export default function Page() {
 
 const makeLapProgFunc = (lapProg: LapProg | null) => {
   if (!lapProg) {
-    return (params: { curLap: number; lapNumber: number }) => params.curLap;
+    return (params: { curLap: number; lapNumber: number; baseLap: number }) => params.curLap;
   }
-  return (params: { curLap: number; lapNumber: number }) => {
+  return (params: { curLap: number; lapNumber: number; baseLap: number }) => {
     if (params.lapNumber < lapProg.startLap) {
       return params.curLap;
+    }
+    if (lapProg.mode === 'static') {
+      return Math.max(0, params.baseLap + lapProg.diff); // will not work with multiple
     }
     return Math.max(0, params.curLap + lapProg.diff);
   };
@@ -170,6 +175,16 @@ function LapProgression(props: {
 
   return (
     <Stack gap={'25px'} w="100%">
+      <Center w="100%">
+        <SegmentedControl
+          value={prog.mode}
+          onChange={value => props.setLapProg(item => (item ? { ...item, mode: value as LapProgMode } : item))}
+          data={[
+            { label: 'Static', value: 'static' },
+            { label: 'Accumlative', value: 'accumlative' },
+          ]}
+        />
+      </Center>
       <Center w="100%">
         <Group w="100%" maw="60%" gap="xs" wrap="nowrap">
           <ActionIcon
@@ -417,7 +432,7 @@ const calculateLapAndOpening = (targetResult: number, distance: DistanceInfo, la
   return { secOpening, secLap };
 };
 
-type LapProgInfo = (params: { curLap: number; lapNumber: number }) => number;
+type LapProgInfo = (params: { curLap: number; lapNumber: number; baseLap: number }) => number;
 
 function Splits(props: { secOpening: number; secLap: number; distance: DistanceInfo; lapProg: LapProgInfo }) {
   const { secOpening, secLap, distance, lapProg } = props;
@@ -656,7 +671,7 @@ function lapSplits(secOpening: number, secLap: number, distance: DistanceInfo, l
     laps.push({ distance: curDistance, timeSec: curTime, lapNumber, lapSec });
     curDistance += LAP_DISTANCE;
     curTime += lapNumber === 1 ? secLap : curLap;
-    curLap = lapProgs({ curLap, lapNumber });
+    curLap = lapProgs({ curLap, lapNumber, baseLap: secLap });
   }
   return laps;
 }
