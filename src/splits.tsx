@@ -1,7 +1,25 @@
-import { ActionIcon, Button, Center, Group, Select, Slider, Stack, Table } from '@mantine/core';
+import {
+  ActionIcon,
+  Button,
+  Center,
+  Group,
+  Modal,
+  RangeSlider,
+  Select,
+  Slider,
+  Stack,
+  Table,
+  Text,
+} from '@mantine/core';
 import { useEffect, useState } from 'react';
 
 type LapProg = { startLap: number; diff: number };
+type LapTimeSettings = { min: number; max: number };
+
+const LAP_TIME_SETTINGS_KEY = 'lapTimeSettings';
+const MIN_ALLOWED_LAP_TIME = 20;
+const MAX_ALLOWED_LAP_TIME = 60;
+const DEFAULT_LAP_TIME_SETTINGS: LapTimeSettings = { min: 30, max: 50 };
 
 export default function Page() {
   const distanceOptions = Object.keys(distances).map(distance => ({
@@ -12,13 +30,18 @@ export default function Page() {
 
   const distance = distances[selectedDistance];
   const [lapProg, setLapProg] = useState<LapProg | null>(null);
+  const [lapTimeSettings, setLapTimeSettings] = useState<LapTimeSettings>(getInitialLapTimeSettings);
+  const [showSettings, setShowSettings] = useState(false);
 
   const lapProgFunc = makeLapProgFunc(lapProg);
-  // const { lockMode, lapLock, setLapLock, openingLock, setOpeningLock } = useLockMode();
 
-  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(distance, lapProgFunc);
+  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(
+    distance,
+    lapProgFunc,
+    lapTimeSettings
+  );
 
-  const { minResult, maxResult } = calculateMinMaxResult(distance);
+  const { minResult, maxResult } = calculateMinMaxResult(distance, lapTimeSettings);
   const [showSplits, setShowSplits] = useState(true);
 
   useEffect(() => {
@@ -28,18 +51,50 @@ export default function Page() {
     window.history.replaceState(null, '', next);
   }, [selectedDistance]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(LAP_TIME_SETTINGS_KEY, JSON.stringify(lapTimeSettings));
+  }, [lapTimeSettings]);
+
   return (
     <Stack maw={'500px'} w={'100%'} gap={'30px'}>
       <Center>
-        <Select
-          maw={'150px'}
-          label="Distance"
-          data={distanceOptions}
-          value={selectedDistance.toString()}
-          onChange={value => value && setSelectedDistance(parseInt(value, 10) as Distance)}
-          allowDeselect={false}
-        />
+        <Group align="end" gap="sm" wrap="nowrap">
+          <Select
+            maw={'150px'}
+            label="Distance"
+            data={distanceOptions}
+            value={selectedDistance.toString()}
+            onChange={value => value && setSelectedDistance(parseInt(value, 10) as Distance)}
+            allowDeselect={false}
+          />
+          <ActionIcon aria-label="Open settings" variant="light" mb="5px" onClick={() => setShowSettings(true)}>
+            ⚙
+          </ActionIcon>
+        </Group>
       </Center>
+      <Modal opened={showSettings} onClose={() => setShowSettings(false)} title="Settings" centered>
+        <Text size="sm" c="dimmed" mb="xs">
+          Choose the lap-time range you want available.
+        </Text>
+        <RangeSlider
+          min={MIN_ALLOWED_LAP_TIME}
+          max={MAX_ALLOWED_LAP_TIME}
+          step={1}
+          labelAlwaysOn
+          mx="xs"
+          mt={36}
+          styles={{ root: { overflow: 'visible' } }}
+          marks={[20, 30, 40, 50, 60].map(value => ({ value, label: value.toString() }))}
+          value={[lapTimeSettings.min, lapTimeSettings.max]}
+          onChange={value => setLapTimeSettings(normalizeLapTimeSettings(value[0], value[1]))}
+          minRange={1}
+          mb={15}
+          label={value => `${Math.abs(value - lapTimeSettings.min) < 0.0001 ? 'Min' : 'Max'}: ${formatLap(value)}`}
+        />
+      </Modal>
       <Stack mt="10px" gap={'30px'}>
         <ResultSlider
           distance={distance}
@@ -52,7 +107,12 @@ export default function Page() {
           maxResult={maxResult}
         />
         <OpeningSlider distance={distance} sec={secOpening} setSec={setOpeningSec} />
-        <LapTimeSlider secLap={secLap} setSecLap={setLapSec} />
+        <LapTimeSlider
+          secLap={secLap}
+          setSecLap={setLapSec}
+          minLap={lapTimeSettings.min}
+          maxLap={lapTimeSettings.max}
+        />
       </Stack>
       <Stack>
         <Center>
@@ -259,37 +319,21 @@ function getOpeningPct(distance: DistanceInfo) {
   }
 }
 
-type LockMode = { type: 'none' } | { type: 'lap'; lap: number } | { type: 'opening'; opening: number };
-
-const LockMode = {
-  none: { type: 'none' } as LockMode,
-  opening: (opening: number): LockMode => ({ type: 'opening', opening }),
-  lap: (lap: number): LockMode => ({ type: 'lap', lap }),
-};
-
 type Mode = { type: 'result'; result: number } | { type: 'laps'; lap: number; opening: number }; // TODO type opening
 
-// function useLockMode() {
-//   const [lockMode, setLockMode] = useState<LockMode>(LockMode.none);
-//   const setLapLock = (n: number) =>
-//     lockMode.type !== 'lap' ? setLockMode(LockMode.lap(n)) : setLockMode(LockMode.none);
-//   const setOpeningLock = (n: number) =>
-//     lockMode.type !== 'opening' ? setLockMode(LockMode.opening(n)) : setLockMode(LockMode.none);
-//   const lapLock = lockMode.type === 'lap';
-//   const openingLock = lockMode.type === 'opening';
-
-//   return { lockMode, lapLock, setLapLock, openingLock, setOpeningLock };
-// }
-
-function useMode(distance: DistanceInfo, lapProg: LapProgInfo) {
-  const [mode, setMode] = useState<Mode>({ type: 'laps', lap: 40, opening: 20 });
+function useMode(distance: DistanceInfo, lapProg: LapProgInfo, lapTimeSettings: LapTimeSettings) {
+  const [mode, setMode] = useState<Mode>({
+    type: 'laps',
+    lap: clamp(40, lapTimeSettings.min, lapTimeSettings.max),
+    opening: 20,
+  });
 
   if (mode.type === 'laps') {
     const setOpeningSec = (opening: number) => {
       setMode({ ...mode, opening });
     };
     const setLapSec = (lap: number) => {
-      setMode({ ...mode, lap });
+      setMode({ ...mode, lap: clamp(lap, lapTimeSettings.min, lapTimeSettings.max) });
     };
     const setResult = (result: number) => {
       setMode({ type: 'result', result });
@@ -305,15 +349,14 @@ function useMode(distance: DistanceInfo, lapProg: LapProgInfo) {
       setResult,
     };
   }
-  // "result" mode
 
-  const { secOpening, secLap } = calculateLapAndOpeningFromLockMode(mode.result, distance);
+  const { secOpening, secLap } = calculateLapAndOpening(mode.result, distance, lapTimeSettings);
 
   const setOpeningSec = (opening: number) => {
     setMode({ type: 'laps', lap: secLap, opening });
   };
   const setLapSec = (lap: number) => {
-    setMode({ type: 'laps', lap, opening: secOpening });
+    setMode({ type: 'laps', lap: clamp(lap, lapTimeSettings.min, lapTimeSettings.max), opening: secOpening });
   };
   const setResult = (result: number) => {
     setMode({ ...mode, result });
@@ -325,16 +368,13 @@ function useMode(distance: DistanceInfo, lapProg: LapProgInfo) {
 const MIN_TIME_OPENING = 5;
 const MAX_TIME_OPENING = 60;
 
-const MIN_TIME_LAP = 30;
-const MAX_TIME_LAP = 50;
-
-const calculateMinMaxResult = (distance: DistanceInfo) => {
-  const minResult = MIN_TIME_OPENING + distance.laps * MIN_TIME_LAP;
-  const maxResult = MAX_TIME_OPENING + distance.laps * MAX_TIME_LAP;
+const calculateMinMaxResult = (distance: DistanceInfo, lapTimeSettings: LapTimeSettings) => {
+  const minResult = MIN_TIME_OPENING + distance.laps * lapTimeSettings.min;
+  const maxResult = MAX_TIME_OPENING + distance.laps * lapTimeSettings.max;
   return { minResult, maxResult };
 };
 
-const calculateLapAndOpeningFromLockMode = (targetResult: number, distance: DistanceInfo) => {
+const calculateLapAndOpening = (targetResult: number, distance: DistanceInfo, lapTimeSettings: LapTimeSettings) => {
   const openingPct = getOpeningPct(distance);
   const secOpening = openingPct * targetResult;
   if (secOpening < MIN_TIME_OPENING) {
@@ -351,9 +391,13 @@ const calculateLapAndOpeningFromLockMode = (targetResult: number, distance: Dist
   }
   const lapPct = (1 - openingPct) / distance.laps;
   const secLap = lapPct * targetResult;
-  if (secLap > MAX_TIME_LAP) {
-    const fixedSecOpening = targetResult - MAX_TIME_LAP * distance.laps;
-    return { secOpening: fixedSecOpening, secLap: MAX_TIME_LAP };
+  if (secLap > lapTimeSettings.max) {
+    const fixedSecOpening = targetResult - lapTimeSettings.max * distance.laps;
+    return { secOpening: fixedSecOpening, secLap: lapTimeSettings.max };
+  }
+  if (secLap < lapTimeSettings.min) {
+    const fixedSecOpening = targetResult - lapTimeSettings.min * distance.laps;
+    return { secOpening: fixedSecOpening, secLap: lapTimeSettings.min };
   }
   return { secOpening, secLap };
 };
@@ -369,7 +413,7 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
     <Table striped highlightOnHover withColumnBorders>
       <Table.Thead>
         <Table.Tr>
-          <Table.Th>Lap</Table.Th>
+          <Table.Th style={{ width: '50px' }}>Lap</Table.Th>
           <Table.Th>Distance</Table.Th>
           <Table.Th>Time</Table.Th>
           <Table.Th>Split</Table.Th>
@@ -378,7 +422,7 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
       <Table.Tbody>
         {laps.map(lap => (
           <Table.Tr key={lap.lapNumber}>
-            <Table.Td>{lap.lapNumber}</Table.Td>
+            <Table.Td style={{ width: '50px' }}>{lap.lapNumber}</Table.Td>
             <Table.Td>{formatDistance(lap.distance)}</Table.Td>
             <Table.Td>{formatSplitTime(lap.timeSec)}</Table.Td>
             <Table.Td>{formatLap(lap.lapSec)}</Table.Td>
@@ -433,12 +477,12 @@ function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n:
   );
 }
 
-function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void }) {
+function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void; minLap: number; maxLap: number }) {
   return (
     <Group gap="sm" align="center" wrap="nowrap">
       <ActionIcon
         variant="light"
-        onClick={() => props.setSecLap(adjustValue(props.secLap, -0.1, 0.1, MIN_TIME_LAP, MAX_TIME_LAP))}
+        onClick={() => props.setSecLap(adjustValue(props.secLap, -0.1, 0.1, props.minLap, props.maxLap))}
       >
         –
       </ActionIcon>
@@ -458,10 +502,10 @@ function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void }
         labelAlwaysOn
         mt={15}
         mb={15}
-        min={MIN_TIME_LAP}
-        max={MAX_TIME_LAP}
-        marks={[20, 30, 35, 40, 45, 50, 60]
-          .filter(n => n >= MIN_TIME_LAP && n <= MAX_TIME_LAP)
+        min={props.minLap}
+        max={props.maxLap}
+        marks={[20, 25, 30, 35, 40, 45, 50, 55, 60]
+          .filter(n => n >= props.minLap && n <= props.maxLap)
           .map(secs => ({
             value: secs,
             label: secs,
@@ -471,7 +515,7 @@ function LapTimeSlider(props: { secLap: number; setSecLap: (n: number) => void }
       />
       <ActionIcon
         variant="light"
-        onClick={() => props.setSecLap(adjustValue(props.secLap, 0.1, 0.1, MIN_TIME_LAP, MAX_TIME_LAP))}
+        onClick={() => props.setSecLap(adjustValue(props.secLap, 0.1, 0.1, props.minLap, props.maxLap))}
       >
         +
       </ActionIcon>
@@ -567,6 +611,10 @@ function adjustValue(value: number, delta: number, step: number, min: number, ma
   return Number(clamped.toFixed(3));
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 type LapInfo = {
   distance: number;
   timeSec: number;
@@ -599,4 +647,34 @@ function getInitialDistance(): Distance {
     return parseInt(param, 10) as Distance;
   }
   return 5000;
+}
+
+function getInitialLapTimeSettings(): LapTimeSettings {
+  if (typeof window === 'undefined') {
+    return DEFAULT_LAP_TIME_SETTINGS;
+  }
+  const stored = window.localStorage.getItem(LAP_TIME_SETTINGS_KEY);
+  if (!stored) {
+    return DEFAULT_LAP_TIME_SETTINGS;
+  }
+
+  try {
+    const parsed = JSON.parse(stored) as Partial<LapTimeSettings>;
+    if (typeof parsed.min !== 'number' || typeof parsed.max !== 'number') {
+      return DEFAULT_LAP_TIME_SETTINGS;
+    }
+    return normalizeLapTimeSettings(parsed.min, parsed.max);
+  } catch {
+    return DEFAULT_LAP_TIME_SETTINGS;
+  }
+}
+
+function normalizeLapTimeSettings(min: number, max: number): LapTimeSettings {
+  const normalizedMin = clamp(min, MIN_ALLOWED_LAP_TIME, MAX_ALLOWED_LAP_TIME);
+  const normalizedMax = clamp(max, MIN_ALLOWED_LAP_TIME, MAX_ALLOWED_LAP_TIME);
+
+  if (normalizedMin > normalizedMax) {
+    return { min: normalizedMax, max: normalizedMin };
+  }
+  return { min: normalizedMin, max: normalizedMax };
 }
