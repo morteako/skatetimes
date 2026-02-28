@@ -29,15 +29,12 @@ export default function Page() {
   const [selectedDistance, setSelectedDistance] = useState<Distance>(getInitialDistance);
 
   const distance = distances[selectedDistance];
-  const [lapProg, setLapProg] = useState<LapProg | null>(null);
+
   const [lapTimeSettings, setLapTimeSettings] = useState<LapTimeSettings>(getInitialLapTimeSettings);
   const [showSettings, setShowSettings] = useState(false);
 
-  const lapProgFunc = makeLapProgFunc(lapProg);
-
-  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult } = useMode(
+  const { secLap, secOpening, result, setOpeningSec, setLapSec, setResult, lapProg, setLapProg, lapProgFunc } = useMode(
     distance,
-    lapProgFunc,
     lapTimeSettings
   );
 
@@ -105,6 +102,7 @@ export default function Page() {
           }}
           minResult={minResult}
           maxResult={maxResult}
+          hasActiveLapProg={lapProg !== null}
         />
         <OpeningSlider distance={distance} sec={secOpening} setSec={setOpeningSec} />
         <LapTimeSlider
@@ -321,12 +319,16 @@ function getOpeningPct(distance: DistanceInfo) {
 
 type Mode = { type: 'result'; result: number } | { type: 'laps'; lap: number; opening: number }; // TODO type opening
 
-function useMode(distance: DistanceInfo, lapProg: LapProgInfo, lapTimeSettings: LapTimeSettings) {
+function useMode(distance: DistanceInfo, lapTimeSettings: LapTimeSettings) {
   const [mode, setMode] = useState<Mode>({
     type: 'laps',
     lap: clamp(40, lapTimeSettings.min, lapTimeSettings.max),
     opening: 20,
   });
+
+  const [lapProg, setLapProg] = useState<LapProg | null>(null);
+
+  const lapProgFunc = makeLapProgFunc(lapProg);
 
   if (mode.type === 'laps') {
     const setOpeningSec = (opening: number) => {
@@ -338,7 +340,7 @@ function useMode(distance: DistanceInfo, lapProg: LapProgInfo, lapTimeSettings: 
     const setResult = (result: number) => {
       setMode({ type: 'result', result });
     };
-    const splits = lapSplits(mode.opening, mode.lap, distance, lapProg);
+    const splits = lapSplits(mode.opening, mode.lap, distance, lapProgFunc);
 
     return {
       secLap: mode.lap,
@@ -347,6 +349,9 @@ function useMode(distance: DistanceInfo, lapProg: LapProgInfo, lapTimeSettings: 
       setOpeningSec,
       setLapSec,
       setResult,
+      lapProg,
+      setLapProg,
+      lapProgFunc,
     };
   }
 
@@ -362,7 +367,17 @@ function useMode(distance: DistanceInfo, lapProg: LapProgInfo, lapTimeSettings: 
     setMode({ ...mode, result });
   };
 
-  return { secLap, secOpening, result: mode.result, setOpeningSec, setLapSec, setResult };
+  return {
+    secLap,
+    secOpening,
+    result: mode.result,
+    setOpeningSec,
+    setLapSec,
+    setResult,
+    lapProg,
+    setLapProg,
+    lapProgFunc,
+  };
 }
 
 const MIN_TIME_OPENING = 5;
@@ -529,26 +544,32 @@ function ResultSlider(props: {
   distance: DistanceInfo;
   minResult: number;
   maxResult: number;
+  hasActiveLapProg: boolean;
 }) {
   const min = props.minResult;
   const max = props.maxResult;
 
+  const locked = props.hasActiveLapProg;
+
   return (
     <Group gap="sm" align="center" wrap="nowrap">
-      <ActionIcon variant="light" onClick={() => props.setResult(adjustValue(props.result, -0.1, 0.1, min, max))}>
+      <ActionIcon
+        disabled={locked}
+        variant="light"
+        onClick={() => props.setResult(adjustValue(props.result, -0.1, 0.1, min, max))}
+      >
         –
       </ActionIcon>
       <Slider
-        color="blue"
         value={props.result}
-        onChange={value => props.setResult(value)}
+        onChange={value => {
+          if (!locked) props.setResult(value);
+        }}
+        color={locked ? 'gray' : 'blue'}
         styles={{
           bar: { display: 'none' },
-          mark: {
-            backgroundColor: '#fff',
-            borderColor: '#fff',
-          },
         }}
+        style={{ flex: 1, pointerEvents: locked ? 'none' : 'auto' }}
         step={1}
         size={'md'}
         labelAlwaysOn
@@ -556,10 +577,13 @@ function ResultSlider(props: {
         max={max}
         mt={15}
         mb={15}
-        label={val => `Result: ${secKmToMinKm(val)}`}
-        style={{ flex: 1 }}
+        label={val => `Result: ${secKmToMinKm(val)}${locked ? ' (Locked)' : ''}`}
       />
-      <ActionIcon variant="light" onClick={() => props.setResult(adjustValue(props.result, 0.1, 0.1, min, max))}>
+      <ActionIcon
+        disabled={locked}
+        variant="light"
+        onClick={() => props.setResult(adjustValue(props.result, 0.1, 0.1, min, max))}
+      >
         +
       </ActionIcon>
     </Group>
