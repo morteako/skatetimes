@@ -40,12 +40,12 @@ export default function Page() {
     lapTimeSettings
   );
 
-  const { minResult, maxResult } = calculateMinMaxResult(distance, lapTimeSettings);
+  const { results } = calculateMinMax(distance, lapTimeSettings);
   const [showSplits, setShowSplits] = useState(true);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    params.set('distance', selectedDistance.toString());
+    params.set('distance', distance.distance.toString());
     const next = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState(null, '', next);
   }, [selectedDistance]);
@@ -102,11 +102,11 @@ export default function Page() {
             setLapProg(lapProg === null ? null : { ...lapProg, diff: 0 });
             setResult(result);
           }}
-          minResult={minResult}
-          maxResult={maxResult}
+          minResult={results.min}
+          maxResult={results.max}
           hasActiveLapProg={lapProg !== null}
         />
-        <OpeningSlider distance={distance} sec={secOpening} setSec={setOpeningSec} />
+        <OpeningSlider distance={distance} sec={secOpening} setSec={setOpeningSec} lapTimeSettings={lapTimeSettings} />
         <LapTimeSlider
           secLap={secLap}
           setSecLap={setLapSec}
@@ -332,13 +332,16 @@ function getOpeningPct(distance: DistanceInfo) {
   }
 }
 
-type Mode = { type: 'result'; result: number } | { type: 'laps'; lap: number; opening: number }; // TODO type opening
+type Mode =
+  | { type: 'result'; result: number; distance: DistanceInfo }
+  | { type: 'laps'; lap: number; opening: number; distance: DistanceInfo }; // TODO type opening
 
 function useMode(distance: DistanceInfo, lapTimeSettings: LapTimeSettings) {
   const [mode, setMode] = useState<Mode>({
     type: 'laps',
     lap: clamp(40, lapTimeSettings.min, lapTimeSettings.max),
     opening: 20,
+    distance,
   });
 
   const [lapProg, setLapProg] = useState<LapProg | null>(null);
@@ -353,13 +356,15 @@ function useMode(distance: DistanceInfo, lapTimeSettings: LapTimeSettings) {
       setMode({ ...mode, lap: clamp(lap, lapTimeSettings.min, lapTimeSettings.max) });
     };
     const setResult = (result: number) => {
-      setMode({ type: 'result', result });
+      setMode({ type: 'result', result, distance });
     };
     const splits = lapSplits(mode.opening, mode.lap, distance, lapProgFunc);
 
+    const minMax = calculateMinMax(distance, lapTimeSettings);
+
     return {
       secLap: mode.lap,
-      secOpening: mode.opening,
+      secOpening: clamp(mode.opening, minMax.openings.min, minMax.openings.max),
       result: splits.at(-1)!.timeSec,
       setOpeningSec,
       setLapSec,
@@ -369,14 +374,16 @@ function useMode(distance: DistanceInfo, lapTimeSettings: LapTimeSettings) {
       lapProgFunc,
     };
   }
+  //if mod.type === 'result'
 
   const { secOpening, secLap } = calculateLapAndOpening(mode.result, distance, lapTimeSettings);
 
   const setOpeningSec = (opening: number) => {
-    setMode({ type: 'laps', lap: secLap, opening });
+    setMode({ type: 'laps', lap: secLap, opening, distance });
   };
   const setLapSec = (lap: number) => {
-    setMode({ type: 'laps', lap: clamp(lap, lapTimeSettings.min, lapTimeSettings.max), opening: secOpening });
+    // is the clamp needed?
+    setMode({ type: 'laps', lap: clamp(lap, lapTimeSettings.min, lapTimeSettings.max), opening: secOpening, distance });
   };
   const setResult = (result: number) => {
     setMode({ ...mode, result });
@@ -398,26 +405,34 @@ function useMode(distance: DistanceInfo, lapTimeSettings: LapTimeSettings) {
 const MIN_TIME_OPENING = 5;
 const MAX_TIME_OPENING = 60;
 
-const calculateMinMaxResult = (distance: DistanceInfo, lapTimeSettings: LapTimeSettings) => {
+const calculateMinMax = (distance: DistanceInfo, lapTimeSettings: LapTimeSettings) => {
+  const minOpening = floorNearest5(getOpeningPct(distance) * lapTimeSettings.min * distance.laps);
+  const maxOpening = ceilNearest5(getOpeningPct(distance) * lapTimeSettings.max * distance.laps);
   const minResult = MIN_TIME_OPENING + distance.laps * lapTimeSettings.min;
   const maxResult = MAX_TIME_OPENING + distance.laps * lapTimeSettings.max;
-  return { minResult, maxResult };
+  return { results: { min: minResult, max: maxResult }, openings: { min: minOpening, max: maxOpening } };
 };
+
+const floorNearest5 = (x: number) => Math.floor(x / 5) * 5;
+const ceilNearest5 = (x: number) => Math.ceil(x / 5) * 5;
 
 const calculateLapAndOpening = (targetResult: number, distance: DistanceInfo, lapTimeSettings: LapTimeSettings) => {
   const openingPct = getOpeningPct(distance);
   const secOpening = openingPct * targetResult;
-  if (secOpening < MIN_TIME_OPENING) {
-    const fixedOpeningPct = MIN_TIME_OPENING / targetResult;
+
+  const { openings } = calculateMinMax(distance, lapTimeSettings);
+
+  if (secOpening < openings.min) {
+    const fixedOpeningPct = openings.min / targetResult;
     const lapPct = (1 - fixedOpeningPct) / distance.laps;
     const secLap = lapPct * targetResult;
-    return { secOpening: MIN_TIME_OPENING, secLap };
+    return { secOpening: openings.min, secLap };
   }
-  if (secOpening > MAX_TIME_OPENING) {
-    const fixedOpeningPct = MAX_TIME_OPENING / targetResult;
+  if (secOpening > openings.max) {
+    const fixedOpeningPct = openings.max / targetResult;
     const lapPct = (1 - fixedOpeningPct) / distance.laps;
     const secLap = lapPct * targetResult;
-    return { secOpening: MAX_TIME_OPENING, secLap };
+    return { secOpening: openings.max, secLap };
   }
   const lapPct = (1 - openingPct) / distance.laps;
   const secLap = lapPct * targetResult;
@@ -463,12 +478,27 @@ function Splits(props: { secOpening: number; secLap: number; distance: DistanceI
   );
 }
 
-function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n: number) => void }) {
+function OpeningSlider(props: {
+  distance: DistanceInfo;
+  sec: number;
+  setSec: (n: number) => void;
+  lapTimeSettings: LapTimeSettings;
+}) {
+  const { openings } = calculateMinMax(props.distance, props.lapTimeSettings);
+
+  const nums = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+  const marks = nums
+    .filter(x => x >= openings.min && x <= openings.max)
+    .map(secs => ({
+      value: secs,
+      label: secs,
+    }));
+
   return (
     <Group gap="sm" align="center" wrap="nowrap">
       <ActionIcon
         variant="light"
-        onClick={() => props.setSec(adjustValue(props.sec, -0.1, 0.1, MIN_TIME_OPENING, MAX_TIME_OPENING))}
+        onClick={() => props.setSec(adjustValue(props.sec, -0.1, 0.1, openings.min, openings.max))}
       >
         –
       </ActionIcon>
@@ -486,20 +516,17 @@ function OpeningSlider(props: { distance: DistanceInfo; sec: number; setSec: (n:
         step={0.1}
         size={'md'}
         labelAlwaysOn
-        min={5}
-        max={60}
+        min={openings.min}
+        max={openings.max}
         mt={15}
         mb={15}
-        marks={[10, 20, 30, 40, 50, 60].map(secs => ({
-          value: secs,
-          label: secs,
-        }))}
+        marks={marks}
         label={val => `Opening: ${formatLap(val)}`}
         style={{ flex: 1 }}
       />
       <ActionIcon
         variant="light"
-        onClick={() => props.setSec(adjustValue(props.sec, 0.1, 0.1, MIN_TIME_OPENING, MAX_TIME_OPENING))}
+        onClick={() => props.setSec(adjustValue(props.sec, 0.1, 0.1, openings.min, openings.max))}
       >
         +
       </ActionIcon>
