@@ -180,8 +180,8 @@ function LapProgression(props: {
           value={prog.mode}
           onChange={value => props.setLapProg(item => (item ? { ...item, mode: value as LapProgMode } : item))}
           data={[
-            { label: 'Static', value: 'static' },
-            { label: 'Accumlative', value: 'accumlative' },
+            { label: 'Fixed', value: 'static' },
+            { label: 'Progressive', value: 'accumlative' },
           ]}
         />
       </Center>
