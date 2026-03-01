@@ -152,7 +152,8 @@ const makeLapProgFunc = (lapProg: LapProg | null) => {
     return (params: { curLap: number; lapNumber: number; baseLap: number }) => params.curLap;
   }
   return (params: { curLap: number; lapNumber: number; baseLap: number }) => {
-    if (params.lapNumber < lapProg.startLap) {
+    // +1 workaround for what seems like a small bug. but works now
+    if (params.lapNumber + 1 < lapProg.startLap) {
       return params.curLap;
     }
     if (lapProg.mode === 'static') {
@@ -186,7 +187,7 @@ function LapProgression(props: {
         />
       </Center>
       <Center w="100%">
-        <Group w="100%" maw="60%" gap="xs" wrap="nowrap">
+        <Group w="100%" maw="70%" gap="xs" wrap="nowrap">
           <ActionIcon
             size="xs"
             variant="light"
@@ -202,12 +203,12 @@ function LapProgression(props: {
             size="xs"
             w="100%"
             min={2}
-            max={props.maxLap}
+            max={props.maxLap + 1}
             step={1}
             value={prog.startLap}
             marks={[
               { value: 2, label: '2' },
-              { value: props.maxLap, label: props.maxLap.toString() },
+              { value: props.maxLap + 1, label: (props.maxLap + 1).toString() },
             ]}
             label={value => `Start lap: ${value}`}
             labelAlwaysOn
@@ -229,7 +230,7 @@ function LapProgression(props: {
         </Group>
       </Center>
       <Center w="100%">
-        <Group w="100%" maw="60%" gap="xs" wrap="nowrap">
+        <Group w="100%" maw="70%" gap="xs" wrap="nowrap">
           <ActionIcon
             size="xs"
             variant="light"
@@ -242,14 +243,14 @@ function LapProgression(props: {
           <Slider
             size="xs"
             w="100%"
-            min={-3}
-            max={3}
+            min={-5}
+            max={5}
             step={0.1}
             value={prog.diff}
             marks={[
-              { value: -3, label: '-3' },
+              { value: -5, label: '-5' },
               { value: 0, label: '0' },
-              { value: 3, label: '3' },
+              { value: 5, label: '5' },
             ]}
             label={value => `Diff: ${value.toFixed(1)}`}
             labelAlwaysOn
@@ -592,6 +593,22 @@ function ResultSlider(props: {
   const max = props.maxResult;
 
   const locked = props.hasActiveLapProg;
+  if (locked) {
+    return (
+      <Group gap="sm" align="center" justify="center" wrap="nowrap">
+        <Text
+          fz="sm"
+          c="white"
+          bg="gray.9"
+          px="sm"
+          py={6}
+          style={{ borderRadius: 'var(--mantine-radius-sm)', lineHeight: 1, userSelect: 'none' }}
+        >
+          Result: {secKmToMinKm(props.result)}
+        </Text>
+      </Group>
+    );
+  }
 
   return (
     <Group gap="sm" align="center" wrap="nowrap">
