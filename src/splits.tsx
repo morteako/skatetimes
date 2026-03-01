@@ -68,6 +68,7 @@ export default function Page() {
             value={selectedDistance.toString()}
             onChange={value => value && setSelectedDistance(parseInt(value, 10) as Distance)}
             allowDeselect={false}
+            styles={{ input: { fontSize: '16px' } }}
           />
           <ActionIcon aria-label="Open settings" variant="light" mb="5px" onClick={() => setShowSettings(true)}>
             ⚙
