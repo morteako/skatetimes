@@ -58,7 +58,7 @@ export default function Page() {
   }, [lapTimeSettings]);
 
   return (
-    <Stack maw={'500px'} w={'100%'} gap={'30px'}>
+    <Stack maw={'500px'} w={'100%'} gap={'20px'}>
       <Center>
         <Group align="end" gap="sm" wrap="nowrap">
           <Select
@@ -115,9 +115,9 @@ export default function Page() {
           maxLap={lapTimeSettings.max}
         />
       </Stack>
-      <Stack>
+      <Stack gap="10px">
         <Center>
-          <LapProgression lapProg={lapProg} setLapProg={setLapProg} maxLap={distance.laps} />
+          <LapProgression curLap={secLap} lapProg={lapProg} setLapProg={setLapProg} maxLap={distance.laps} />
         </Center>
         <Center>
           {lapProg ? (
@@ -125,24 +125,26 @@ export default function Page() {
               Remove lap progression
             </Button>
           ) : (
-            <Button variant="subtle" onClick={() => setLapProg({ startLap: 2, diff: 0.1, mode: 'accumlative' })}>
+            <Button
+              variant="subtle"
+              onClick={() => setLapProg({ startLap: distance.laps + 1, diff: 0.1, mode: 'static' })}
+            >
               Add lap progression
             </Button>
           )}
         </Center>
-      </Stack>
-
-      <Stack gap={'10px'}>
-        <Center>
-          <Button variant="subtle" onClick={() => setShowSplits(value => !value)}>
-            {showSplits ? 'Hide splits' : 'Show splits'}
-          </Button>
-        </Center>
-        {showSplits && (
+        <Stack gap={'10px'}>
           <Center>
-            <Splits secLap={secLap} secOpening={secOpening} distance={distance} lapProg={lapProgFunc} />
+            <Button variant="subtle" onClick={() => setShowSplits(value => !value)}>
+              {showSplits ? 'Hide splits' : 'Show splits'}
+            </Button>
           </Center>
-        )}
+          {showSplits && (
+            <Center>
+              <Splits secLap={secLap} secOpening={secOpening} distance={distance} lapProg={lapProgFunc} />
+            </Center>
+          )}
+        </Stack>
       </Stack>
     </Stack>
   );
@@ -165,6 +167,7 @@ const makeLapProgFunc = (lapProg: LapProg | null) => {
 };
 
 function LapProgression(props: {
+  curLap: number;
   lapProg: LapProg | null;
   setLapProg: React.Dispatch<React.SetStateAction<LapProg | null>>;
   maxLap: number;
@@ -253,7 +256,9 @@ function LapProgression(props: {
               { value: 0, label: '0' },
               { value: 5, label: '5' },
             ]}
-            label={value => `Diff: ${value.toFixed(1)}`}
+            label={value =>
+              `Diff: ${value.toFixed(1)}${prog.mode === 'static' ? ' (Lap: ' + formatLap(props.curLap + value) + ')' : ''}`
+            }
             labelAlwaysOn
             mt={15}
             mb={15}
